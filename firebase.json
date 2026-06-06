@@ -4,7 +4,13 @@
     "ignore": [
       "firebase.json",
       ".firebaserc",
+      ".gitignore",
+      ".git/**",
+      ".firebase/**",
+      ".vscode/**",
+      ".idea/**",
       "**/.*",
+      "**/.*/**",
       "**/node_modules/**",
       "launch.bat",
       "firestore.rules",
