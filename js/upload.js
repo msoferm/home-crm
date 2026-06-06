@@ -11,10 +11,19 @@ const Upload = (() => {
     const accs = await DB.accAll();
     const cardSel = document.getElementById('upload-card-account');
     const bankSel = document.getElementById('upload-bank-account');
-    const cardAccs = accs.filter(a => a.type === 'card' || a.type === 'other');
-    const bankAccs = accs.filter(a => a.type === 'bank' || a.type === 'savings' || a.type === 'other');
-    cardSel.innerHTML = cardAccs.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || '<option value="">— אין כרטיסים, צור חשבון —</option>';
-    bankSel.innerHTML = bankAccs.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || '<option value="">— אין בנקים, צור חשבון —</option>';
+    const cardAccs = accs.filter(a => a.type === 'card');
+    const bankAccs = accs.filter(a => a.type === 'bank' || a.type === 'savings');
+    const cardLabel = (a) => {
+      let s = a.name;
+      if (a.last4Digits) s += ` •••• ${a.last4Digits}`;
+      return s;
+    };
+    cardSel.innerHTML = cardAccs.length
+      ? '<option value="" disabled selected>— בחר כרטיס —</option>' + cardAccs.map(a => `<option value="${a.id}">${cardLabel(a)}</option>`).join('')
+      : '<option value="">— אין כרטיסים, הוסף ב"כרטיסים וחשבונות" —</option>';
+    bankSel.innerHTML = bankAccs.length
+      ? '<option value="" disabled selected>— בחר חשבון —</option>' + bankAccs.map(a => `<option value="${a.id}">${a.name}</option>`).join('')
+      : '<option value="">— אין חשבונות, הוסף ב"כרטיסים וחשבונות" —</option>';
   };
 
   const showParseErrorModal = (result, file, kind) => {
@@ -57,10 +66,21 @@ const Upload = (() => {
   };
 
   const handleFile = async (file, kind) => {
+    const accSelId = kind === 'card' ? 'upload-card-account' : 'upload-bank-account';
+    const accountId = document.getElementById(accSelId).value || null;
+    if (!accountId) {
+      showParseErrorModal({
+        error: kind === 'card'
+          ? 'לפני העלאה — בחר כרטיס אשראי בתיבת הבחירה. אם אין לך כרטיס רשום, צור בעמוד "כרטיסים וחשבונות".'
+          : 'לפני העלאה — בחר חשבון עו"ש בתיבת הבחירה. אם אין לך חשבון רשום, צור בעמוד "כרטיסים וחשבונות".',
+        diagnostic: '',
+      }, file, kind);
+      // reset the file input
+      document.getElementById(kind === 'card' ? 'file-card' : 'file-bank').value = '';
+      return;
+    }
     UI.toast(`קורא את "${file.name}"...`, '');
     try {
-      const accSelId = kind === 'card' ? 'upload-card-account' : 'upload-bank-account';
-      const accountId = document.getElementById(accSelId).value || null;
       const result = kind === 'card'
         ? await Parsers.parseCreditCard(file, { accountId })
         : await Parsers.parseBank(file, { accountId });
@@ -142,6 +162,7 @@ const Upload = (() => {
       installment: r.installment || null,
       chargeDate: r.chargeDate || null,
       balanceAfter: r.balanceAfter || null,
+      fixedOrVariable: r.fixedOrVariable || null,
       dedupKey: r.dedupKey,
     }));
     await DB.txBulkAdd(payload);

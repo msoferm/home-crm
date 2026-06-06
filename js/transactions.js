@@ -3,7 +3,7 @@
 // ============================================================
 
 const Transactions = (() => {
-  let _filters = { q: '', categoryId: '', accountId: '', type: '' };
+  let _filters = { q: '', categoryId: '', accountId: '', type: '', fixed: '' };
 
   const populateFilters = async () => {
     const [cats, accs] = await Promise.all([DB.catAll(), DB.accAll()]);
@@ -33,6 +33,9 @@ const Transactions = (() => {
     if (_filters.categoryId) txs = txs.filter(t => t.categoryId === _filters.categoryId);
     if (_filters.accountId) txs = txs.filter(t => t.accountId === _filters.accountId);
     if (_filters.type) txs = txs.filter(t => t.type === _filters.type);
+    if (_filters.fixed === 'fixed') txs = txs.filter(t => t.fixedOrVariable === 'fixed');
+    else if (_filters.fixed === 'variable') txs = txs.filter(t => t.fixedOrVariable === 'variable');
+    else if (_filters.fixed === 'unclassified') txs = txs.filter(t => !t.fixedOrVariable);
 
     txs.sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -45,17 +48,24 @@ const Transactions = (() => {
       const installLbl = t.installment && t.installment.total > 1
         ? `${t.installment.current}/${t.installment.total}`
         : '';
+      const accLabel = acc ? (acc.last4Digits ? `${acc.name} •••• ${acc.last4Digits}` : acc.name) : '—';
+      const fixedBadge = t.fixedOrVariable === 'fixed'
+        ? U.el('span', { class: 'pill warn', style: { marginRight: '4px', fontSize: '10.5px' }, title: 'הוצאה קבועה' }, '🔁 קבועה')
+        : t.fixedOrVariable === 'variable'
+        ? U.el('span', { class: 'pill info', style: { marginRight: '4px', fontSize: '10.5px' }, title: 'הוצאה מזדמנת' }, '◆ מזדמנת')
+        : null;
       const tr = U.el('tr', {}, [
         U.el('td', {}, U.fmtDate(t.date)),
         U.el('td', {}, [
-          t.description,
+          U.el('div', {}, [t.description, ' ', fixedBadge].filter(Boolean)),
           t.notes ? U.el('div', { class: 'muted', style: { fontSize: '11px' } }, t.notes) : null,
         ].filter(Boolean)),
         U.el('td', {}, cat ? U.el('span', { class: 'pill cat', style: { background: cat.color + '22', color: cat.color } }, `${cat.icon || ''} ${cat.name}`) : '—'),
-        U.el('td', {}, acc ? U.el('span', { class: 'pill info' }, acc.name) : '—'),
+        U.el('td', {}, acc ? U.el('span', { class: 'pill info', style: acc.color ? { background: acc.color + '22', color: acc.color } : {} }, accLabel) : '—'),
         U.el('td', {}, installLbl ? U.el('span', { class: 'pill warn' }, installLbl) : ''),
         U.el('td', { class: 'num ' + (t.amount < 0 ? 'amt-out' : 'amt-in') }, U.fmtILS(t.amount, true)),
         U.el('td', { class: 'row-actions' }, U.el('div', { class: 'row-actions' }, [
+          U.el('button', { onclick: () => toggleFixed(t), title: 'החלף קבועה/מזדמנת' }, '🔁'),
           U.el('button', { onclick: () => openEdit(t) }, '✎'),
           U.el('button', { onclick: () => deleteTx(t) }, '🗑'),
         ])),
@@ -139,6 +149,17 @@ const Transactions = (() => {
     let closeModal = UI.openModal({ title: tx ? 'עריכת תנועה' : 'תנועה חדשה', body: form, footer: [cancel, save] });
   };
 
+  // Toggle the fixed/variable flag on a transaction.
+  // null → 'fixed' → 'variable' → null (clear)
+  const toggleFixed = async (tx) => {
+    const next = tx.fixedOrVariable === 'fixed' ? 'variable'
+              : tx.fixedOrVariable === 'variable' ? null
+              : 'fixed';
+    await DB.txUpdate(tx.id, { fixedOrVariable: next, fixedOrVariableManual: true });
+    UI.toast(next === 'fixed' ? 'סומן כקבוע' : next === 'variable' ? 'סומן כמזדמן' : 'הוסר סיווג', 'success');
+    render();
+  };
+
   const deleteTx = async (tx) => {
     const ok = await UI.confirmDialog({
       title: 'מחיקת תנועה', body: `למחוק את "${tx.description}" על סך ${U.fmtILS(tx.amount, true)}?`,
@@ -185,6 +206,7 @@ const Transactions = (() => {
     document.getElementById('tx-filter-cat').addEventListener('change', (e) => { _filters.categoryId = e.target.value; render(); });
     document.getElementById('tx-filter-acc').addEventListener('change', (e) => { _filters.accountId = e.target.value; render(); });
     document.getElementById('tx-filter-type').addEventListener('change', (e) => { _filters.type = e.target.value; render(); });
+    document.getElementById('tx-filter-fixed').addEventListener('change', (e) => { _filters.fixed = e.target.value; render(); });
     document.getElementById('tx-add').addEventListener('click', () => openEdit());
     document.getElementById('tx-export').addEventListener('click', exportCSV);
   };

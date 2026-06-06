@@ -142,6 +142,10 @@ const Parsers = (() => {
   // ---- Read a workbook from File ----
   const readFile = async (file) => {
     const name = file.name.toLowerCase();
+    if (name.endsWith('.pdf')) {
+      if (!window.PdfParser) throw new Error('מודול PDF לא נטען. רענן את הדף.');
+      return PdfParser.parsePdfFile(file);
+    }
     if (name.endsWith('.csv')) {
       const text = await file.text();
       return new Promise((resolve, reject) => {
@@ -319,7 +323,7 @@ const Parsers = (() => {
     return { kind: 'card', ...(await parseCreditCard(file, opts)) };
   };
 
-  // Apply auto-categorization to parsed rows
+  // Apply auto-categorization + fixed/variable classification to parsed rows.
   const enrichWithCategories = async (rows) => {
     const cats = await DB.catAll();
     const catById = Object.fromEntries(cats.map(c => [c.id, c]));
@@ -328,6 +332,7 @@ const Parsers = (() => {
       r.categoryId = categoryId;
       r.categoryName = catById[categoryId]?.name || 'כללי';
       r.categoryColor = catById[categoryId]?.color || '#6b7280';
+      r.fixedOrVariable = await Categorizer.detectFixedOrVariable(r, catById[categoryId]?.name);
     }
     return rows;
   };

@@ -160,6 +160,19 @@ const Settings = (() => {
     Dashboard.render();
   };
 
+  const updateAiStatus = async () => {
+    const k = await AIService.getApiKey();
+    const el = document.getElementById('settings-ai-status');
+    if (!el) return;
+    if (k) {
+      el.textContent = `✓ מפתח שמור (...${k.slice(-6)}). פלטת ה-AI פעילה.`;
+      el.style.color = '#4ade80';
+    } else {
+      el.textContent = '⚠ לא הוגדר מפתח. שאלות AI לא יעבדו.';
+      el.style.color = 'var(--muted)';
+    }
+  };
+
   const init = () => {
     document.getElementById('settings-export').addEventListener('click', exportBackup);
     document.getElementById('settings-import').addEventListener('change', (e) => {
@@ -167,6 +180,31 @@ const Settings = (() => {
     });
     document.getElementById('settings-reset').addEventListener('click', reset);
     document.getElementById('settings-demo').addEventListener('click', loadDemo);
+
+    document.getElementById('settings-ai-save').addEventListener('click', async () => {
+      const inp = document.getElementById('settings-ai-key');
+      const v = inp.value.trim();
+      if (!v) { UI.toast('הזן מפתח', 'error'); return; }
+      if (!v.startsWith('sk-ant-')) { UI.toast('המפתח צריך להתחיל ב-"sk-ant-"', 'error'); return; }
+      await AIService.setApiKey(v);
+      inp.value = '';
+      UI.toast('מפתח נשמר', 'success');
+      updateAiStatus();
+    });
+    document.getElementById('settings-ai-clear').addEventListener('click', async () => {
+      const ok = await UI.confirmDialog({ title: 'מחיקת מפתח', body: 'למחוק את מפתח ה-AI?', confirmLabel: 'מחק', danger: true });
+      if (!ok) return;
+      await AIService.clearApiKey();
+      UI.toast('המפתח נמחק', 'success');
+      updateAiStatus();
+    });
+    document.getElementById('settings-classify').addEventListener('click', async () => {
+      UI.toast('מסווג...', '');
+      const n = await Categorizer.autoClassifyAll();
+      UI.toast(`${n} תנועות עודכנו`, 'success');
+    });
+
+    UI.subscribePage((p) => { if (p === 'settings') updateAiStatus(); });
   };
 
   return { init };

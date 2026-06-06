@@ -75,5 +75,50 @@ const Categorizer = (() => {
     return 'expense';
   };
 
-  return { categorize, categorizeBulk, recategorizeAll, detectType, reset };
+  // Auto-classify a transaction as fixed (קבוע) or variable (מזדמן)
+  // Heuristic:
+  //   1. If it has a recurringParentId or matches a recurring rule → fixed
+  //   2. If the category is in the FIXED_CATEGORY_NAMES list → fixed
+  //   3. If description matches obvious recurring keywords → fixed
+  //   4. Otherwise → variable
+  const FIXED_CATEGORY_NAMES = new Set([
+    'חשמל', 'מים', 'ארנונה', 'ועד בית', 'תקשורת',
+    'ביטוח', 'משכנתא', 'משכורת',
+  ]);
+  const FIXED_KEYWORDS = [
+    'משכורת','משכנתא','ארנונה','חשמל','חברת חשמל','בזק','הוט','פרטנר','סלקום','פלאפון',
+    'netflix','נטפליקס','spotify','ספוטיפיי','apple','google','icloud','disney',
+    'ועד בית','ועד','דמי ניהול','ביטוח','הראל','מגדל','כלל','מנורה','הפניקס','איילון',
+  ];
+  const detectFixedOrVariable = async (tx, catName = null) => {
+    if (tx.recurringParentId) return 'fixed';
+    const text = normalize(tx.description || '');
+    if (FIXED_KEYWORDS.some(k => text.includes(normalize(k)))) return 'fixed';
+    if (catName && FIXED_CATEGORY_NAMES.has(catName)) return 'fixed';
+    if (!catName && tx.categoryId) {
+      const cat = await DB.catGet(tx.categoryId);
+      if (cat && FIXED_CATEGORY_NAMES.has(cat.name)) return 'fixed';
+    }
+    return 'variable';
+  };
+
+  // Re-classify all transactions that don't have a manual override.
+  const autoClassifyAll = async () => {
+    const txs = await DB.txAll();
+    const cats = await DB.catAll();
+    const catById = Object.fromEntries(cats.map(c => [c.id, c]));
+    let changed = 0;
+    for (const t of txs) {
+      if (t.fixedOrVariableManual) continue; // respect manual overrides
+      const cur = t.fixedOrVariable;
+      const next = await detectFixedOrVariable(t, catById[t.categoryId]?.name);
+      if (cur !== next) {
+        await DB.txUpdate(t.id, { fixedOrVariable: next });
+        changed++;
+      }
+    }
+    return changed;
+  };
+
+  return { categorize, categorizeBulk, recategorizeAll, detectType, detectFixedOrVariable, autoClassifyAll, reset };
 })();

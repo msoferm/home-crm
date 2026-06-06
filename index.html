@@ -12,6 +12,13 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dexie@4.0.7/dist/dexie.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.worker.min.js';
+    }
+  </script>
 </head>
 <body>
   <!-- Loading state, shown until cloud module reports back -->
@@ -193,6 +200,12 @@
             <option value="expense">הוצאות</option>
             <option value="income">הכנסות</option>
           </select>
+          <select id="tx-filter-fixed" class="input">
+            <option value="">קבועות ומזדמנות</option>
+            <option value="fixed">קבועות בלבד</option>
+            <option value="variable">מזדמנות בלבד</option>
+            <option value="unclassified">לא מסווגות</option>
+          </select>
           <button class="btn" id="tx-add">＋ הוספה</button>
           <button class="btn-soft" id="tx-export">⤓ ייצוא CSV</button>
         </div>
@@ -300,10 +313,10 @@
           <div class="card">
             <div class="card-head">
               <div class="card-title">📥 העלאת פלט כרטיס אשראי</div>
-              <div class="card-sub">תומך ב-Isracard, Visa Cal, Max, Cal — קבצי Excel (.xlsx/.xls) או CSV</div>
+              <div class="card-sub">תומך ב-Isracard, Visa Cal, Max, Cal — קבצי Excel/CSV/PDF</div>
             </div>
             <div class="dropzone" id="dz-card">
-              <input type="file" id="file-card" accept=".xlsx,.xls,.csv" hidden />
+              <input type="file" id="file-card" accept=".xlsx,.xls,.csv,.pdf" hidden />
               <div class="dz-inner">
                 <div class="dz-icon">💳</div>
                 <div class="dz-title">גרור קובץ לכאן או לחץ לבחירה</div>
@@ -322,7 +335,7 @@
               <div class="card-sub">תומך בפלטים סטנדרטיים של הבנקים בישראל — Excel/CSV</div>
             </div>
             <div class="dropzone" id="dz-bank">
-              <input type="file" id="file-bank" accept=".xlsx,.xls,.csv" hidden />
+              <input type="file" id="file-bank" accept=".xlsx,.xls,.csv,.pdf" hidden />
               <div class="dz-inner">
                 <div class="dz-icon">🏦</div>
                 <div class="dz-title">גרור קובץ לכאן או לחץ לבחירה</div>
@@ -399,6 +412,29 @@
             </div>
           </div>
         </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><div class="card-title">🤖 חיבור AI (Claude)</div></div>
+            <div class="muted" style="margin-bottom:12px;font-size:12.5px">
+              חיבור מפתח של Claude API מאפשר לפלטת הפקודות (Ctrl+K) לענות על שאלות שאינן בתבניות המקומיות.
+              את המפתח אפשר ליצור ב-<a href="https://console.anthropic.com/" target="_blank" style="color:var(--primary-2)">console.anthropic.com</a>.
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:10px">
+              <input id="settings-ai-key" class="input" type="password" placeholder="sk-ant-..." style="flex:1" />
+              <button class="btn" id="settings-ai-save">שמור</button>
+              <button class="btn-soft" id="settings-ai-clear">מחק</button>
+            </div>
+            <div id="settings-ai-status" class="muted" style="font-size:12.5px">—</div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">⚙️ סיווג קבועות/מזדמנות</div></div>
+            <div class="muted" style="margin-bottom:12px;font-size:12.5px">
+              מריץ את אלגוריתם הסיווג האוטומטי על כל התנועות. תנועות שסומנו ידנית לא ייגעו.
+            </div>
+            <button class="btn-soft" id="settings-classify">🔁 סווג מחדש</button>
+          </div>
+        </div>
       </section>
     </main>
   </div>
@@ -418,10 +454,35 @@
   <!-- Toast -->
   <div class="toast-stack" id="toast-stack"></div>
 
+  <!-- Floating command-palette button -->
+  <button class="palette-fab hidden" id="palette-fab" title="פלטת פקודות (Ctrl+K)">⌘</button>
+
+  <!-- Command palette -->
+  <div class="palette-backdrop hidden" id="palette-backdrop">
+    <div class="palette" id="palette">
+      <div class="palette-input-wrap">
+        <span class="palette-prefix">⌘</span>
+        <input class="palette-input" id="palette-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="שאל משהו — לדוגמה: כמה הוצאתי בשופרסל החודש?" />
+        <span class="palette-loading hidden" id="palette-loading">⟳</span>
+      </div>
+      <div class="palette-results" id="palette-results"></div>
+      <div class="palette-foot">
+        <div class="palette-hint">
+          <kbd>↑↓</kbd> ניווט • <kbd>Enter</kbd> ביצוע • <kbd>Esc</kbd> סגירה
+        </div>
+        <button class="palette-ai-btn" id="palette-ai-btn" type="button" title="שלח את השאלה ל-AI">
+          🤖 שאל את ה-AI
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- App scripts -->
   <script src="js/utils.js"></script>
   <script src="js/db.js"></script>
   <script src="js/categorizer.js"></script>
+  <script src="js/pdf-parser.js"></script>
   <script src="js/parsers.js"></script>
   <script src="js/forecast.js"></script>
   <script src="js/ui.js"></script>
@@ -434,6 +495,8 @@
   <script src="js/upload.js"></script>
   <script src="js/settings.js"></script>
   <script src="js/auth-ui.js"></script>
+  <script src="js/ai-service.js"></script>
+  <script src="js/palette.js"></script>
   <script src="js/app.js"></script>
   <!-- Firebase cloud sync (ES module, loads asynchronously) -->
   <script type="module" src="js/cloud.js"></script>

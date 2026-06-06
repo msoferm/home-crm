@@ -230,6 +230,15 @@ const Dashboard = (() => {
     U.clearChildren(wrap);
     const insights = [];
 
+    // Fixed vs variable breakdown for the current month
+    const fixedSum = U.sum(monthTxs.filter(t => t.type === 'expense' && t.fixedOrVariable === 'fixed'), t => Math.abs(t.amount));
+    const varSum = U.sum(monthTxs.filter(t => t.type === 'expense' && t.fixedOrVariable === 'variable'), t => Math.abs(t.amount));
+    const totalClassified = fixedSum + varSum;
+    if (totalClassified > 0) {
+      const fixedPct = Math.round((fixedSum / totalClassified) * 100);
+      insights.push(`🔁 הוצאות קבועות: ${U.fmtILS(fixedSum)} (${fixedPct}%) • ◆ מזדמנות: ${U.fmtILS(varSum)} (${100 - fixedPct}%)`);
+    }
+
     // Insight 1: month-over-month change
     const today = new Date();
     const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);

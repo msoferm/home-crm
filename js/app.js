@@ -54,6 +54,7 @@ const ForecastPage = (() => {
     Upload.init();
     Settings.init();
     AuthUI.init();
+    Palette.init();
 
     UI.initMonthPicker();
     await Transactions.populateFilters();
