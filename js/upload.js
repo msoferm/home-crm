@@ -17,6 +17,30 @@ const Upload = (() => {
     bankSel.innerHTML = bankAccs.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || '<option value="">— אין בנקים, צור חשבון —</option>';
   };
 
+  const showParseErrorModal = (result, file, kind) => {
+    const body = U.el('div');
+    body.appendChild(U.el('div', { style: { marginBottom: '10px', color: '#fca5a5' } }, '⚠️ ' + result.error));
+    body.appendChild(U.el('div', { class: 'muted', style: { marginBottom: '14px' } },
+      `קובץ: ${file.name} • סוג: ${kind === 'card' ? 'כרטיס אשראי' : 'עו"ש'}`));
+    if (result.diagnostic) {
+      body.appendChild(U.el('div', { style: { marginBottom: '6px', fontWeight: '600' } }, 'מידע אבחון:'));
+      body.appendChild(U.el('pre', {
+        style: {
+          background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: '8px',
+          padding: '10px', fontSize: '11.5px', overflow: 'auto', maxHeight: '240px',
+          whiteSpace: 'pre-wrap', direction: 'ltr', textAlign: 'left',
+        },
+      }, result.diagnostic));
+    }
+    body.appendChild(U.el('div', { class: 'muted', style: { marginTop: '12px', fontSize: '12.5px' } },
+      'אם נראה לך שהקובץ אמור לעבוד, פתח את הקונסול (F12) ושלח לי את ההודעות מסוג [parseBank] / [parseCard] — נוכל להוסיף תמיכה.'));
+    let closeModal = UI.openModal({
+      title: 'לא הצלחתי לקרוא את הקובץ',
+      body,
+      footer: [U.el('button', { class: 'btn-soft', onclick: () => closeModal() }, 'סגור')],
+    });
+  };
+
   const setupDropzone = (zoneId, fileId, kind) => {
     const zone = document.getElementById(zoneId);
     const file = document.getElementById(fileId);
@@ -42,11 +66,11 @@ const Upload = (() => {
         : await Parsers.parseBank(file, { accountId });
 
       if (result.error) {
-        UI.toast(result.error, 'error');
+        showParseErrorModal(result, file, kind);
         return;
       }
       if (!result.rows.length) {
-        UI.toast('לא נמצאו תנועות בקובץ', 'warn');
+        showParseErrorModal({ error: 'לא נמצאו תנועות בקובץ.', diagnostic: '' }, file, kind);
         return;
       }
       await Parsers.enrichWithCategories(result.rows);

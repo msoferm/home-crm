@@ -14,22 +14,30 @@ const Parsers = (() => {
     ],
     date: [
       'תאריך עסקה','תאריך רכישה','תאריך','תאריך ערך','תאריך פעולה','תאריך הפעולה',
-      'מועד','מועד עסקה','date','transaction date','posting date','value date'
+      'מועד','מועד עסקה','עסקה בתאריך','date','transaction date','posting date','value date'
     ],
     description: [
-      'שם בית עסק','שם בית העסק','בית עסק','בית העסק','שם עסק','תיאור','תאור','פרטים','פירוט','שם הספק','description','details','narration','memo','merchant'
+      'שם בית עסק','שם בית העסק','בית עסק','בית העסק','שם עסק',
+      'תיאור הפעולה','תיאור פעולה','תיאור','תאור',
+      'פרטים','פרטי הפעולה','פרטי פעולה','פירוט','שם הספק','שם הפעולה',
+      'description','details','narration','memo','merchant'
     ],
     amount: [
-      'סכום עסקה','סכום בש"ח','סכום ש"ח','סכום','סכום החיוב','סכום בשקלים','סכום החיוב בש"ח','amount','חיוב','חיוב בש"ח','סכום הפעולה','total'
+      'סכום עסקה','סכום בש"ח','סכום ש"ח','סכום','סכום החיוב','סכום בשקלים',
+      'סכום החיוב בש"ח','סכום פעולה','סכום הפעולה','סכום בש״ח',
+      'amount','חיוב','חיוב בש"ח','total'
     ],
     debit: [
-      'חובה','סכום חובה','בחובה','debit'
+      'חובה','סכום חובה','בחובה','חובה בש"ח','סכום בחובה','משיכה','משיכות',
+      'debit','withdrawal'
     ],
     credit: [
-      'זכות','סכום זכות','בזכות','credit'
+      'זכות','סכום זכות','בזכות','זכות בש"ח','סכום בזכות','הפקדה','הפקדות',
+      'credit','deposit'
     ],
     balance: [
-      'יתרה','יתרה בש"ח','יתרה לאחר עסקה','balance','running balance'
+      'יתרה','יתרה בש"ח','יתרה לאחר עסקה','יתרה לאחר העסקה','יתרת עו"ש','יתרה משוערכת','יתרה ערך',
+      'balance','running balance'
     ],
     // installment information
     totalAmount: [
@@ -42,11 +50,20 @@ const Parsers = (() => {
       'מספר תשלומים','סך תשלומים','כמות תשלומים','total installments'
     ],
     notes: [
-      'הערות','הערה','notes','note'
+      'הערות','הערה','notes','note','אסמכתא','מספר אסמכתא','אסמכתא/מס\' שיק','סוג תנועה','סוג'
     ],
   };
 
-  const norm = (s) => String(s || '').replace(/["׳′‘’`]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
+  // Strip Unicode bidi-control characters that Israeli bank exports often inject
+  // into header cells, which would otherwise break exact matching.
+  const stripBidi = (s) => String(s).replace(/[‎‏‪-‮⁦-⁩؜]/g, '');
+
+  const norm = (s) => stripBidi(String(s || ''))
+    .replace(/[״״׳′‘’`]/g, '"')        // unify Hebrew/curly quotes
+    .replace(/[ ]/g, ' ')          // non-breaking space → space
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 
   // Match a header cell to one of our known column types
   const matchHeader = (cell) => {
@@ -66,10 +83,11 @@ const Parsers = (() => {
     return null;
   };
 
-  // Find the header row by scanning the first 30 rows for a row with multiple matches
+  // Find the header row by scanning the first 40 rows for a row with multiple matches.
+  // For each row, build a map of column-index → known key.
   const findHeaderRow = (rows) => {
     let best = { idx: -1, score: 0, map: null };
-    const limit = Math.min(30, rows.length);
+    const limit = Math.min(40, rows.length);
     for (let i = 0; i < limit; i++) {
       const row = rows[i] || [];
       const map = {};
@@ -81,7 +99,6 @@ const Parsers = (() => {
           score += m.exact ? 2 : 1;
         }
       });
-      // We need at least date + (amount OR debit/credit OR description)
       const hasDate = 'date' in map || 'chargeDate' in map;
       const hasAmt = 'amount' in map || 'debit' in map || 'credit' in map;
       const hasDesc = 'description' in map;
@@ -90,6 +107,36 @@ const Parsers = (() => {
       }
     }
     return best.idx >= 0 ? best : null;
+  };
+
+  // Pick the sheet most likely to contain the transactions table:
+  // it's the one whose findHeaderRow returns the highest score.
+  const pickBestSheet = (sheets) => {
+    let best = null;
+    for (const sheet of sheets) {
+      const h = findHeaderRow(sheet.rows);
+      if (h && (!best || h.score > best.header.score)) {
+        best = { sheet, header: h };
+      }
+    }
+    return best;
+  };
+
+  // Build a diagnostic string listing the distinct non-empty cells from the first
+  // ~15 rows, so the user (and the dev console) can see what column names exist.
+  const buildDiagnostic = (sheets) => {
+    const lines = [];
+    sheets.forEach(sheet => {
+      const seen = new Set();
+      (sheet.rows || []).slice(0, 15).forEach(row => {
+        (row || []).forEach(cell => {
+          const v = norm(cell);
+          if (v && v.length < 60 && !seen.has(v)) seen.add(v);
+        });
+      });
+      if (seen.size) lines.push(`גיליון "${sheet.name}": ` + [...seen].slice(0, 30).join(' | '));
+    });
+    return lines.join('\n');
   };
 
   // ---- Read a workbook from File ----
@@ -121,23 +168,18 @@ const Parsers = (() => {
     const { accountId = null } = opts;
     const { sheets } = await readFile(file);
     const results = [];
-    let usedSheet = null;
-    let header = null;
 
-    for (const sheet of sheets) {
-      const h = findHeaderRow(sheet.rows);
-      if (h) {
-        usedSheet = sheet;
-        header = h;
-        break;
-      }
+    const best = pickBestSheet(sheets);
+    if (!best) {
+      const diag = buildDiagnostic(sheets);
+      return {
+        error: 'לא הצלחתי לזהות מבנה כרטיס אשראי. ודא שהקובץ כולל עמודות תאריך/תיאור/סכום.',
+        diagnostic: diag,
+        rows: [],
+      };
     }
-
-    if (!usedSheet || !header) {
-      // Fallback heuristic: try positional guess
-      return { error: 'לא הצלחתי לזהות מבנה כרטיס אשראי. ודא שהקובץ כולל עמודות תאריך/תיאור/סכום.', rows: [] };
-    }
-
+    const usedSheet = best.sheet;
+    const header = best.header;
     const { idx: headerIdx, map } = header;
     const dataRows = usedSheet.rows.slice(headerIdx + 1);
 
@@ -195,30 +237,29 @@ const Parsers = (() => {
     const { accountId = null } = opts;
     const { sheets } = await readFile(file);
     const results = [];
-    let usedSheet = null;
-    let header = null;
 
-    for (const sheet of sheets) {
-      const h = findHeaderRow(sheet.rows);
-      if (h) {
-        usedSheet = sheet;
-        header = h;
-        break;
-      }
+    const best = pickBestSheet(sheets);
+    if (!best) {
+      const diag = buildDiagnostic(sheets);
+      console.warn('[parseBank] No header found. Columns seen:\n' + diag);
+      return {
+        error: 'לא הצלחתי לזהות מבנה עו"ש. ודא שהקובץ כולל תאריך/פרטים/חובה/זכות או סכום.',
+        diagnostic: diag,
+        rows: [],
+      };
     }
-
-    if (!usedSheet || !header) {
-      return { error: 'לא הצלחתי לזהות מבנה עו"ש. ודא שהקובץ כולל תאריך/פרטים/חובה/זכות או סכום.', rows: [] };
-    }
-
+    const usedSheet = best.sheet;
+    const header = best.header;
     const { idx: headerIdx, map } = header;
     const dataRows = usedSheet.rows.slice(headerIdx + 1);
+    console.log('[parseBank] Using sheet:', usedSheet.name, '| Header row:', headerIdx + 1, '| Columns:', map);
     const get = (row, key) => (key in map) ? row[map[key]] : null;
 
     let lastBalance = null;
+    const reject = { empty: 0, noDate: 0, noDesc: 0, noAmt: 0, summary: 0 };
 
     for (const row of dataRows) {
-      if (!row || row.every(c => c == null || String(c).trim() === '')) continue;
+      if (!row || row.every(c => c == null || String(c).trim() === '')) { reject.empty++; continue; }
       const desc = String(get(row, 'description') || '').trim();
       const date = U.parseDateFlex(get(row, 'date'));
       let amt = null;
@@ -228,9 +269,10 @@ const Parsers = (() => {
       else if (credit != null && credit !== 0) amt = Math.abs(credit);
       else amt = U.parseNum(get(row, 'amount'));
 
-      if (!date || amt == null || amt === 0) continue;
-      if (!desc) continue;
-      if (/^(סה"כ|יתרת|סך הכל|total|סיכום|יתרה לתחילת|יתרה לסוף)/i.test(desc)) continue;
+      if (!date) { reject.noDate++; continue; }
+      if (amt == null || amt === 0) { reject.noAmt++; continue; }
+      if (!desc) { reject.noDesc++; continue; }
+      if (/^(סה"כ|יתרת|סך הכל|total|סיכום|יתרה לתחילת|יתרה לסוף)/i.test(desc)) { reject.summary++; continue; }
 
       const bal = U.parseNum(get(row, 'balance'));
       if (bal != null) lastBalance = { value: bal, date };
@@ -248,6 +290,19 @@ const Parsers = (() => {
       });
     }
 
+    if (!results.length) {
+      console.warn('[parseBank] 0 rows accepted. Rejections:', reject, '| Header map:', map);
+      const parts = [];
+      if (reject.noDate) parts.push(`${reject.noDate} שורות ללא תאריך תקין`);
+      if (reject.noAmt) parts.push(`${reject.noAmt} שורות ללא סכום`);
+      if (reject.noDesc) parts.push(`${reject.noDesc} שורות ללא תיאור`);
+      if (reject.summary) parts.push(`${reject.summary} שורות סיכום`);
+      return {
+        error: 'זוהה מבנה אך לא נמצאו שורות תנועה תקינות. ' + (parts.join(' • ') || 'בדוק את תוכן הקובץ.'),
+        diagnostic: 'עמודות שזוהו: ' + Object.keys(map).join(', '),
+        rows: [],
+      };
+    }
     return { rows: results, headerMap: map, sheet: usedSheet.name, lastBalance };
   };
 
