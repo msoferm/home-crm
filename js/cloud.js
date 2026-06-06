@@ -58,7 +58,7 @@ const deserializeFromCloud = (obj) => {
 };
 
 // ---- State ----
-let currentUser = null;
+let currentUser = undefined; // undefined = not yet known; null = signed out; object = signed in
 let unsubListeners = [];
 let listeners = []; // event subscribers
 let syncing = false;
@@ -71,7 +71,22 @@ const subscribe = (fn) => { listeners.push(fn); return () => { listeners = liste
 const signInGoogle = () => signInWithPopup(auth, googleProvider);
 const signInEmail = (email, pass) => signInWithEmailAndPassword(auth, email, pass);
 const signUpEmail = (email, pass) => createUserWithEmailAndPassword(auth, email, pass);
-const logout = () => signOut(auth);
+const logout = async () => {
+  // Clear local IndexedDB so private data isn't visible to anyone else on this device.
+  try {
+    await Promise.all([
+      DB.db.transactions.clear(),
+      DB.db.accounts.clear(),
+      DB.db.categories.clear(),
+      DB.db.recurring.clear(),
+      DB.db.budgets.clear(),
+      DB.db.settings.clear(),
+    ]);
+  } catch (e) { console.warn('Local clear on logout failed:', e); }
+  await signOut(auth);
+  // Reload so the app starts clean
+  setTimeout(() => location.reload(), 200);
+};
 
 // ---- Sync: push one record ----
 const pushOne = async (collectionName, record) => {
@@ -270,28 +285,36 @@ const installDBWraps = () => {
 const onAuthChange = (cb) => onAuthStateChanged(auth, cb);
 
 // Bootstrap when user signs in
+let firstAuthFired = false;
 const handleAuthChange = async (user) => {
   const wasUser = currentUser;
-  currentUser = user;
+  currentUser = user; // null = signed out, object = signed in
 
-  // Update the user-pill UI
-  notify('authChange', { user });
+  // First time we hear from Firebase Auth: emit authReady; later changes are authChange.
+  if (!firstAuthFired) {
+    firstAuthFired = true;
+    notify('authReady', { user });
+  } else {
+    notify('authChange', { user });
+  }
 
   if (user) {
     installDBWraps();
-    // Strategy: pull cloud → local. If cloud is empty AND local has data → push up.
+    // For privacy: when a user logs in, always reset local DB defaults before pulling,
+    // so leftover local data from before login doesn't accidentally get pushed/merged.
+    // The pull will repopulate from the cloud's source of truth.
     try {
       const probe = await getDocs(query(userCol(user.uid, 'transactions')));
       const cloudHasData = !probe.empty;
-      const localTxs = await DB.txAll();
       if (cloudHasData) {
         await pullAll();
-        if (window.Dashboard) Dashboard.render();
-      } else if (localTxs.length > 0) {
-        await pushAll();
       } else {
-        // First-time user with no local & no cloud — nothing to do
+        // First-time login for this user.
+        // Ensure defaults exist (DB.init was called at boot), then push to cloud.
+        const hasAny = (await DB.txAll()).length || (await DB.accAll()).length || (await DB.catAll()).length;
+        if (hasAny) await pushAll();
       }
+      if (window.Dashboard) Dashboard.render();
       startLiveListeners();
     } catch (err) {
       console.error('Initial sync failed:', err);

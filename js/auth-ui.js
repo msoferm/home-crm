@@ -1,119 +1,106 @@
 // ============================================================
-//  Auth UI — login modal, user pill, sync status
+//  Auth UI — full-screen gate, user pill, sync status
 //  Depends on window.Cloud (defined in cloud.js ES module).
 // ============================================================
 
 const AuthUI = (() => {
 
-  const openLoginModal = () => {
-    if (!window.Cloud) {
-      UI.toast('שכבת הענן עדיין נטענת... נסה שוב בעוד רגע', 'warn');
-      return;
-    }
-    const body = U.el('div');
-
-    // Tabs
-    let mode = 'login';
-    const tabs = U.el('div', { class: 'auth-tabs' });
-    const loginTab = U.el('button', { class: 'auth-tab active', type: 'button' }, 'כניסה');
-    const signupTab = U.el('button', { class: 'auth-tab', type: 'button' }, 'הרשמה');
-    tabs.appendChild(loginTab);
-    tabs.appendChild(signupTab);
-    body.appendChild(tabs);
-
-    // Google button
-    const googleBtn = U.el('button', { class: 'google-btn', type: 'button', onclick: async () => {
-      try {
-        UI.toast('פותח חלון התחברות...', '');
-        await Cloud.signInGoogle();
-        UI.toast('התחברת בהצלחה', 'success');
-        closeModal();
-      } catch (err) {
-        console.error(err);
-        UI.toast(authErrorMessage(err), 'error');
-      }
-    }, html: `
-      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-        <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8a12 12 0 1 1 8.5-20.4l5.7-5.7A20 20 0 1 0 24 44a20 20 0 0 0 19.6-23.5z"/>
-        <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8A12 12 0 0 1 24 12c3 0 5.8 1.1 8 3l5.7-5.7A20 20 0 0 0 6.3 14.7z"/>
-        <path fill="#4CAF50" d="M24 44c5.1 0 9.8-2 13.3-5.2l-6.1-5.2c-2 1.4-4.5 2.2-7.2 2.2-5.2 0-9.6-3.3-11.2-7.9L6.1 32.6A20 20 0 0 0 24 44z"/>
-        <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3a12 12 0 0 1-4.1 5.6l6.1 5.2A20 20 0 0 0 44 24c0-1.2-.1-2.4-.4-3.5z"/>
-      </svg>
-      התחברות עם Google`,
-    });
-    body.appendChild(googleBtn);
-
-    // Divider
-    body.appendChild(U.el('div', { class: 'auth-divider' }, 'או'));
-
-    // Email/password form
-    const form = U.el('form', { class: 'auth-form', onsubmit: async (e) => {
-      e.preventDefault();
-      const data = UI.collectForm(form);
-      if (!data.email || !data.password) { UI.toast('יש למלא דוא"ל וסיסמה', 'error'); return; }
-      try {
-        if (mode === 'login') await Cloud.signInEmail(data.email, data.password);
-        else await Cloud.signUpEmail(data.email, data.password);
-        UI.toast(mode === 'login' ? 'התחברת בהצלחה' : 'נרשמת בהצלחה', 'success');
-        closeModal();
-      } catch (err) {
-        console.error(err);
-        UI.toast(authErrorMessage(err), 'error');
-      }
-    }});
-    const emailInp = UI.inputText('email', '', { type: 'email', placeholder: 'דוא"ל' });
-    const passInp = UI.inputText('password', '', { type: 'password', placeholder: 'סיסמה (לפחות 6 תווים)' });
-    form.appendChild(emailInp);
-    form.appendChild(passInp);
-    const submitBtn = U.el('button', { class: 'btn btn-block', type: 'submit' }, 'כניסה');
-    form.appendChild(submitBtn);
-    body.appendChild(form);
-
-    // Hint
-    body.appendChild(U.el('div', { class: 'auth-hint' }, 'הנתונים שלך יסונכרנו אוטומטית בין כל המכשירים שלך'));
-
-    // Tab switching
-    const setMode = (m) => {
-      mode = m;
-      loginTab.classList.toggle('active', m === 'login');
-      signupTab.classList.toggle('active', m === 'signup');
-      submitBtn.textContent = m === 'login' ? 'כניסה' : 'הרשמה ושמירת נתונים בענן';
-    };
-    loginTab.onclick = () => setMode('login');
-    signupTab.onclick = () => setMode('signup');
-
-    let closeModal = UI.openModal({
-      title: 'התחברות לסנכרון ענן',
-      body,
-      footer: [U.el('button', { class: 'btn-soft', onclick: () => closeModal() }, 'סגור')],
-    });
-  };
+  let _mode = 'login'; // 'login' | 'signup'
 
   const authErrorMessage = (err) => {
     const code = err?.code || '';
-    if (code.includes('email-already-in-use')) return 'הדוא"ל כבר רשום במערכת';
-    if (code.includes('weak-password')) return 'הסיסמה חלשה מדי (לפחות 6 תווים)';
-    if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) return 'פרטי התחברות שגויים';
+    if (code.includes('email-already-in-use')) return 'הדוא"ל כבר רשום במערכת — נסה להיכנס במקום להירשם';
+    if (code.includes('weak-password')) return 'הסיסמה חלשה מדי — לפחות 6 תווים';
+    if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) return 'דוא"ל או סיסמה שגויים';
     if (code.includes('invalid-email')) return 'דוא"ל לא תקין';
     if (code.includes('popup-closed-by-user')) return 'חלון ההתחברות נסגר';
-    if (code.includes('popup-blocked')) return 'הדפדפן חסם את חלון ההתחברות';
+    if (code.includes('popup-blocked')) return 'הדפדפן חסם את חלון ההתחברות — אפשר חלונות קופצים לאתר';
     if (code.includes('network')) return 'בעיית רשת — בדוק חיבור לאינטרנט';
     if (code.includes('operation-not-allowed')) return 'יש להפעיל את ספק ההתחברות הזה ב-Firebase Console';
+    if (code.includes('too-many-requests')) return 'יותר מדי ניסיונות — נסה שוב בעוד דקות';
     return err?.message || 'שגיאת התחברות';
   };
 
+  const showError = (msg) => {
+    const e = document.getElementById('gate-error');
+    e.textContent = msg;
+    e.classList.remove('hidden');
+  };
+  const clearError = () => document.getElementById('gate-error').classList.add('hidden');
+
+  const setMode = (m) => {
+    _mode = m;
+    document.getElementById('gate-tab-login').classList.toggle('active', m === 'login');
+    document.getElementById('gate-tab-signup').classList.toggle('active', m === 'signup');
+    document.getElementById('gate-submit-btn').textContent = m === 'login' ? 'כניסה' : 'הרשמה ושמירה בענן';
+    const passInp = document.querySelector('#gate-form input[name="password"]');
+    if (passInp) passInp.setAttribute('autocomplete', m === 'login' ? 'current-password' : 'new-password');
+    clearError();
+  };
+
+  const showGate = () => {
+    document.getElementById('boot-screen').classList.add('hidden');
+    document.getElementById('auth-gate').classList.remove('hidden');
+    document.getElementById('app-shell').classList.add('hidden');
+  };
+  const showApp = () => {
+    document.getElementById('boot-screen').classList.add('hidden');
+    document.getElementById('auth-gate').classList.add('hidden');
+    document.getElementById('app-shell').classList.remove('hidden');
+  };
+  const showBoot = () => {
+    document.getElementById('boot-screen').classList.remove('hidden');
+    document.getElementById('auth-gate').classList.add('hidden');
+    document.getElementById('app-shell').classList.add('hidden');
+  };
+
+  const wireGate = () => {
+    document.getElementById('gate-tab-login').addEventListener('click', () => setMode('login'));
+    document.getElementById('gate-tab-signup').addEventListener('click', () => setMode('signup'));
+
+    document.getElementById('gate-google-btn').addEventListener('click', async () => {
+      clearError();
+      try {
+        await Cloud.signInGoogle();
+        // auth state listener will call showApp()
+      } catch (err) {
+        console.error(err);
+        showError(authErrorMessage(err));
+      }
+    });
+
+    document.getElementById('gate-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearError();
+      const data = UI.collectForm(e.target);
+      if (!data.email || !data.password) { showError('יש למלא דוא"ל וסיסמה'); return; }
+      const submitBtn = document.getElementById('gate-submit-btn');
+      submitBtn.disabled = true;
+      const origText = submitBtn.textContent;
+      submitBtn.textContent = 'מתחבר...';
+      try {
+        if (_mode === 'login') await Cloud.signInEmail(data.email, data.password);
+        else await Cloud.signUpEmail(data.email, data.password);
+        // auth state listener will call showApp()
+      } catch (err) {
+        console.error(err);
+        showError(authErrorMessage(err));
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = origText;
+      }
+    });
+  };
+
   const updateUserPill = (user) => {
-    const loginBtn = document.getElementById('btn-login');
     const userInfo = document.getElementById('user-info');
     if (user) {
-      loginBtn.classList.add('hidden');
       userInfo.classList.remove('hidden');
       const avatar = document.getElementById('user-avatar');
       const name = document.getElementById('user-name');
       avatar.src = user.photoURL || `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%236366f1'/><text x='50%25' y='55%25' text-anchor='middle' fill='white' font-family='sans-serif' font-size='14' font-weight='bold'>${(user.displayName || user.email || '?')[0].toUpperCase()}</text></svg>`;
       name.textContent = user.displayName || user.email || 'משתמש';
     } else {
-      loginBtn.classList.remove('hidden');
       userInfo.classList.add('hidden');
     }
   };
@@ -131,50 +118,70 @@ const AuthUI = (() => {
   };
 
   const init = () => {
-    document.getElementById('btn-login').addEventListener('click', openLoginModal);
+    wireGate();
+
     document.getElementById('btn-logout').addEventListener('click', async () => {
       const ok = await UI.confirmDialog({
         title: 'התנתקות',
-        body: 'הנתונים יישארו ב-IndexedDB המקומי. להתנתק מהענן?',
-        confirmLabel: 'התנתקות',
+        body: 'המידע המקומי יימחק מהמכשיר הזה (נשאר בטוח בענן). להמשיך?',
+        confirmLabel: 'התנתקות', danger: true,
       });
       if (!ok) return;
-      await Cloud.logout();
-      UI.toast('התנתקת', 'success');
+      try {
+        await Cloud.logout();
+        // logout handler clears IDB and reloads
+      } catch (err) {
+        UI.toast('שגיאה בהתנתקות: ' + err.message, 'error');
+      }
     });
 
-    // Wait for cloud module to be ready (it dispatches 'cloud-ready')
+    // Subscribe to cloud events. Wait for cloud-ready if needed.
     const subscribe = () => {
-      if (!window.Cloud) return;
       Cloud.subscribe((event, payload) => {
-        if (event === 'authChange') {
+        if (event === 'authReady') {
+          if (payload.user) { updateUserPill(payload.user); showApp(); }
+          else showGate();
+        } else if (event === 'authChange') {
           updateUserPill(payload.user);
-          if (!payload.user) updateSyncStatus('offline');
+          if (payload.user) showApp();
+          else showGate();
         } else if (event === 'syncStart') {
           updateSyncStatus('syncing');
         } else if (event === 'syncEnd') {
           updateSyncStatus('');
-          UI.toast(payload.direction === 'down' ? 'הנתונים סונכרנו מהענן ✓' : 'הנתונים נשמרו בענן ✓', 'success');
+          if (payload.direction === 'down') UI.toast('הנתונים סונכרנו מהענן ✓', 'success');
           if (window.Dashboard) Dashboard.render();
-          if (UI.currentPage() === 'transactions') Transactions.render();
+          if (UI.currentPage() === 'transactions' && window.Transactions) Transactions.render();
         } else if (event === 'syncError') {
           updateSyncStatus('error');
           UI.toast('שגיאת סנכרון: ' + (payload?.message || ''), 'error');
         } else if (event === 'remoteUpdate') {
-          UI.toast(`עדכון מהענן: ${payload.count} שינויים ב-${payload.collection}`, '');
           if (UI.currentPage() === 'dashboard' && window.Dashboard) Dashboard.render();
           if (UI.currentPage() === 'transactions' && window.Transactions) Transactions.render();
         }
       });
-      // Initial state
+
+      // Read initial state (in case cloud already triggered authReady before we subscribed)
       const u = Cloud.currentUser();
-      if (u) updateUserPill(u);
-      else updateSyncStatus('offline');
+      if (u !== undefined) {
+        // authReady was already fired
+        if (u) { updateUserPill(u); showApp(); }
+        else showGate();
+      }
     };
 
     if (window.Cloud) subscribe();
     else document.addEventListener('cloud-ready', subscribe, { once: true });
+
+    // Fallback: if cloud doesn't load within 8 seconds (CDN blocked, no internet),
+    // show the gate with an explanatory error
+    setTimeout(() => {
+      if (!window.Cloud) {
+        showGate();
+        showError('שכבת הענן לא נטענה. בדוק חיבור אינטרנט ורענן את הדף.');
+      }
+    }, 8000);
   };
 
-  return { init, openLoginModal };
+  return { init, showGate, showApp, showBoot };
 })();
