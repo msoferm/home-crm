@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>כלכלת הבית — מערכת ניהול אישית</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dexie@4.0.7/dist/dexie.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">₪</div>
+        <div class="brand-text">
+          <div class="brand-title">כלכלת הבית</div>
+          <div class="brand-sub">ניהול חכם</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="#" class="nav-item active" data-page="dashboard">
+          <span class="nav-icon">📊</span><span>סקירה</span>
+        </a>
+        <a href="#" class="nav-item" data-page="transactions">
+          <span class="nav-icon">💳</span><span>תנועות</span>
+        </a>
+        <a href="#" class="nav-item" data-page="cards">
+          <span class="nav-icon">🏦</span><span>כרטיסים וחשבונות</span>
+        </a>
+        <a href="#" class="nav-item" data-page="forecast">
+          <span class="nav-icon">📈</span><span>צפי לחודשים</span>
+        </a>
+        <a href="#" class="nav-item" data-page="categories">
+          <span class="nav-icon">🏷️</span><span>קטגוריות</span>
+        </a>
+        <a href="#" class="nav-item" data-page="recurring">
+          <span class="nav-icon">🔁</span><span>הוצאות קבועות</span>
+        </a>
+        <a href="#" class="nav-item" data-page="budgets">
+          <span class="nav-icon">🎯</span><span>תקציבים</span>
+        </a>
+        <a href="#" class="nav-item" data-page="upload">
+          <span class="nav-icon">📥</span><span>העלאת קבצים</span>
+        </a>
+        <a href="#" class="nav-item" data-page="settings">
+          <span class="nav-icon">⚙️</span><span>הגדרות</span>
+        </a>
+      </nav>
+      <div class="sidebar-foot">
+        <button class="btn-soft btn-block" id="btn-quick-add">
+          <span>＋</span> תנועה חדשה
+        </button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-title" id="page-title">סקירה</div>
+        <div class="topbar-actions">
+          <div class="topbar-month">
+            <button class="icon-btn" id="month-prev" title="חודש קודם">‹</button>
+            <div class="month-pill" id="month-label">—</div>
+            <button class="icon-btn" id="month-next" title="חודש הבא">›</button>
+            <button class="icon-btn" id="month-today" title="חזרה להיום">היום</button>
+          </div>
+          <div class="user-pill" id="user-pill">
+            <button class="btn-soft" id="btn-login">🔐 כניסה / סנכרון לענן</button>
+            <div class="user-info hidden" id="user-info">
+              <span class="sync-status" id="sync-status" title="סטטוס סנכרון">●</span>
+              <img class="user-avatar" id="user-avatar" alt="" />
+              <span class="user-name" id="user-name"></span>
+              <button class="icon-btn" id="btn-logout" title="התנתקות">⎋</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="page" id="page-dashboard">
+        <div class="kpis">
+          <div class="kpi kpi-income">
+            <div class="kpi-label">הכנסות החודש</div>
+            <div class="kpi-value" id="kpi-income">₪0</div>
+            <div class="kpi-sub" id="kpi-income-sub">—</div>
+          </div>
+          <div class="kpi kpi-expense">
+            <div class="kpi-label">הוצאות החודש</div>
+            <div class="kpi-value" id="kpi-expense">₪0</div>
+            <div class="kpi-sub" id="kpi-expense-sub">—</div>
+          </div>
+          <div class="kpi kpi-balance">
+            <div class="kpi-label">מאזן החודש</div>
+            <div class="kpi-value" id="kpi-balance">₪0</div>
+            <div class="kpi-sub" id="kpi-balance-sub">הכנסות פחות הוצאות</div>
+          </div>
+          <div class="kpi kpi-upcoming">
+            <div class="kpi-label">חיובים עתידיים</div>
+            <div class="kpi-value" id="kpi-upcoming">₪0</div>
+            <div class="kpi-sub" id="kpi-upcoming-sub">תשלומים שטרם נגבו</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">הוצאות לפי קטגוריה</div>
+              <div class="card-sub" id="cat-chart-sub">החודש</div>
+            </div>
+            <div class="chart-box"><canvas id="chart-categories"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">תזרים חודשי — 12 חודשים</div>
+              <div class="card-sub">הכנסות אל מול הוצאות</div>
+            </div>
+            <div class="chart-box"><canvas id="chart-flow"></canvas></div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">צפי 6 חודשים קדימה</div>
+              <div class="card-sub">כולל תשלומים והוצאות קבועות</div>
+            </div>
+            <div class="chart-box"><canvas id="chart-forecast"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">תנועות אחרונות</div>
+              <div class="card-sub">מעודכן</div>
+            </div>
+            <div class="table-wrap">
+              <table class="table compact">
+                <thead><tr><th>תאריך</th><th>תיאור</th><th>קטגוריה</th><th class="num">סכום</th></tr></thead>
+                <tbody id="dash-recent"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-head"><div class="card-title">חשבונות וכרטיסים</div></div>
+            <div id="dash-accounts" class="accounts-list"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">תקציבים</div></div>
+            <div id="dash-budgets" class="budgets-list"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">תובנות חכמות</div></div>
+            <div id="dash-insights" class="insights-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-transactions">
+        <div class="toolbar">
+          <input type="text" id="tx-search" placeholder="חיפוש לפי תיאור..." class="input grow" />
+          <select id="tx-filter-cat" class="input"><option value="">כל הקטגוריות</option></select>
+          <select id="tx-filter-acc" class="input"><option value="">כל החשבונות</option></select>
+          <select id="tx-filter-type" class="input">
+            <option value="">הכל</option>
+            <option value="expense">הוצאות</option>
+            <option value="income">הכנסות</option>
+          </select>
+          <button class="btn" id="tx-add">＋ הוספה</button>
+          <button class="btn-soft" id="tx-export">⤓ ייצוא CSV</button>
+        </div>
+        <div class="card no-pad">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>תאריך</th>
+                  <th>תיאור</th>
+                  <th>קטגוריה</th>
+                  <th>חשבון</th>
+                  <th>תשלום</th>
+                  <th class="num">סכום</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tx-tbody"></tbody>
+            </table>
+          </div>
+          <div class="table-foot" id="tx-foot"></div>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-cards">
+        <div class="toolbar">
+          <button class="btn" id="acc-add">＋ הוספת חשבון/כרטיס</button>
+        </div>
+        <div class="cards-grid" id="accounts-grid"></div>
+      </section>
+
+      <section class="page hidden" id="page-forecast">
+        <div class="toolbar">
+          <div class="muted">תחזית מבוססת על תשלומים פתוחים והוצאות קבועות. ניתן לכוונן בטאב "הוצאות קבועות".</div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">תזרים צפוי</div>
+            <div class="card-sub">12 חודשים קדימה</div>
+          </div>
+          <div class="chart-box tall"><canvas id="chart-forecast-big"></canvas></div>
+        </div>
+        <div class="card no-pad">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>חודש</th>
+                  <th class="num">הכנסות צפויות</th>
+                  <th class="num">תשלומי כרטיס</th>
+                  <th class="num">הוצאות קבועות</th>
+                  <th class="num">סה"כ הוצאות</th>
+                  <th class="num">מאזן חודשי</th>
+                  <th class="num">מאזן מצטבר</th>
+                </tr>
+              </thead>
+              <tbody id="forecast-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-categories">
+        <div class="toolbar">
+          <button class="btn" id="cat-add">＋ קטגוריה חדשה</button>
+          <button class="btn-soft" id="cat-recategorize">🔄 סיווג מחדש לכל התנועות</button>
+        </div>
+        <div class="cats-grid" id="cats-grid"></div>
+      </section>
+
+      <section class="page hidden" id="page-recurring">
+        <div class="toolbar">
+          <button class="btn" id="rec-add">＋ הוספת הוצאה/הכנסה קבועה</button>
+        </div>
+        <div class="card no-pad">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th>שם</th><th>סוג</th><th>קטגוריה</th><th>חשבון</th><th>יום בחודש</th><th class="num">סכום</th><th>סטטוס</th><th></th></tr>
+              </thead>
+              <tbody id="rec-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-budgets">
+        <div class="toolbar">
+          <div class="muted">קבע תקציב חודשי לכל קטגוריה. המערכת תתריע כשמתקרבים לחריגה.</div>
+        </div>
+        <div class="card no-pad">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th>קטגוריה</th><th class="num">תקציב חודשי</th><th class="num">בוצע החודש</th><th>ניצול</th><th></th></tr>
+              </thead>
+              <tbody id="budget-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-upload">
+        <div class="upload-grid">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">📥 העלאת פלט כרטיס אשראי</div>
+              <div class="card-sub">תומך ב-Isracard, Visa Cal, Max, Cal — קבצי Excel (.xlsx/.xls) או CSV</div>
+            </div>
+            <div class="dropzone" id="dz-card">
+              <input type="file" id="file-card" accept=".xlsx,.xls,.csv" hidden />
+              <div class="dz-inner">
+                <div class="dz-icon">💳</div>
+                <div class="dz-title">גרור קובץ לכאן או לחץ לבחירה</div>
+                <div class="dz-sub">המערכת תזהה אוטומטית את הפורמט ותסווג את החיובים</div>
+              </div>
+            </div>
+            <div class="upload-options">
+              <label>שיוך לחשבון:
+                <select id="upload-card-account" class="input"></select>
+              </label>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">🏦 העלאת פלט עו"ש בנק</div>
+              <div class="card-sub">תומך בפלטים סטנדרטיים של הבנקים בישראל — Excel/CSV</div>
+            </div>
+            <div class="dropzone" id="dz-bank">
+              <input type="file" id="file-bank" accept=".xlsx,.xls,.csv" hidden />
+              <div class="dz-inner">
+                <div class="dz-icon">🏦</div>
+                <div class="dz-title">גרור קובץ לכאן או לחץ לבחירה</div>
+                <div class="dz-sub">המערכת תזהה תאריך, סכום, חובה/זכות ויתרה</div>
+              </div>
+            </div>
+            <div class="upload-options">
+              <label>שיוך לחשבון:
+                <select id="upload-bank-account" class="input"></select>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card hidden" id="preview-card">
+          <div class="card-head">
+            <div class="card-title">תצוגה מקדימה לפני ייבוא</div>
+            <div class="card-sub" id="preview-sub">—</div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>תאריך</th><th>תיאור</th><th>קטגוריה זוהתה</th><th>תשלום</th><th class="num">סכום</th><th>סטטוס</th></tr></thead>
+              <tbody id="preview-tbody"></tbody>
+            </table>
+          </div>
+          <div class="preview-actions">
+            <button class="btn" id="preview-confirm">✓ ייבוא לתנועות</button>
+            <button class="btn-soft" id="preview-cancel">ביטול</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page hidden" id="page-settings">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><div class="card-title">נתונים</div></div>
+            <div class="settings-list">
+              <div class="setting-row">
+                <div>
+                  <div class="setting-title">גיבוי כל המידע</div>
+                  <div class="muted">ייצוא קובץ JSON של כל הנתונים</div>
+                </div>
+                <button class="btn-soft" id="settings-export">⤓ ייצוא</button>
+              </div>
+              <div class="setting-row">
+                <div>
+                  <div class="setting-title">שחזור מגיבוי</div>
+                  <div class="muted">ייבוא קובץ JSON שיוחזרה ממנו המערכת</div>
+                </div>
+                <label class="btn-soft">
+                  ⤒ ייבוא
+                  <input type="file" id="settings-import" accept=".json" hidden />
+                </label>
+              </div>
+              <div class="setting-row">
+                <div>
+                  <div class="setting-title">איפוס המערכת</div>
+                  <div class="muted">מחיקת כל הנתונים — לא ניתן לבטל!</div>
+                </div>
+                <button class="btn-danger" id="settings-reset">🗑️ איפוס</button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">דוגמת נתונים</div></div>
+            <div class="settings-list">
+              <div class="setting-row">
+                <div>
+                  <div class="setting-title">טען נתוני דוגמה</div>
+                  <div class="muted">נתוני הדגמה לחודש האחרון — מועיל להתנסות</div>
+                </div>
+                <button class="btn-soft" id="settings-demo">✨ טען</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-backdrop hidden" id="modal-backdrop">
+    <div class="modal" id="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="modal-title">—</div>
+        <button class="icon-btn" id="modal-close">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-foot" id="modal-foot"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-stack" id="toast-stack"></div>
+
+  <!-- App scripts -->
+  <script src="js/utils.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/categorizer.js"></script>
+  <script src="js/parsers.js"></script>
+  <script src="js/forecast.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/transactions.js"></script>
+  <script src="js/cards.js"></script>
+  <script src="js/categories.js"></script>
+  <script src="js/recurring.js"></script>
+  <script src="js/budgets.js"></script>
+  <script src="js/upload.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/auth-ui.js"></script>
+  <script src="js/app.js"></script>
+  <!-- Firebase cloud sync (ES module, loads asynchronously) -->
+  <script type="module" src="js/cloud.js"></script>
+</body>
+</html>
