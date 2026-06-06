@@ -25,33 +25,16 @@
     <div class="auth-card">
       <div class="auth-logo">₪</div>
       <div class="auth-title">כלכלת הבית</div>
-      <div class="auth-subtitle">התחבר כדי לגשת לנתונים הפרטיים שלך</div>
-
-      <button class="google-btn" id="gate-google-btn" type="button">
-        <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-          <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8a12 12 0 1 1 8.5-20.4l5.7-5.7A20 20 0 1 0 24 44a20 20 0 0 0 19.6-23.5z"/>
-          <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8A12 12 0 0 1 24 12c3 0 5.8 1.1 8 3l5.7-5.7A20 20 0 0 0 6.3 14.7z"/>
-          <path fill="#4CAF50" d="M24 44c5.1 0 9.8-2 13.3-5.2l-6.1-5.2c-2 1.4-4.5 2.2-7.2 2.2-5.2 0-9.6-3.3-11.2-7.9L6.1 32.6A20 20 0 0 0 24 44z"/>
-          <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3a12 12 0 0 1-4.1 5.6l6.1 5.2A20 20 0 0 0 44 24c0-1.2-.1-2.4-.4-3.5z"/>
-        </svg>
-        התחברות עם Google
-      </button>
-
-      <div class="auth-divider">או באמצעות דוא"ל</div>
-
-      <div class="auth-tabs">
-        <button class="auth-tab active" id="gate-tab-login" type="button">כניסה</button>
-        <button class="auth-tab" id="gate-tab-signup" type="button">הרשמה</button>
-      </div>
+      <div class="auth-subtitle">מערכת פרטית — כניסה לבעלים בלבד</div>
 
       <form class="auth-form" id="gate-form">
         <input class="input" type="email" name="email" placeholder="דוא&quot;ל" required autocomplete="email" />
-        <input class="input" type="password" name="password" placeholder="סיסמה (לפחות 6 תווים)" required autocomplete="current-password" minlength="6" />
+        <input class="input" type="password" name="password" placeholder="סיסמה" required autocomplete="current-password" />
         <button class="btn btn-block" type="submit" id="gate-submit-btn">כניסה</button>
         <div class="auth-error hidden" id="gate-error"></div>
       </form>
 
-      <div class="auth-hint">🔒 הנתונים שלך מאוחסנים בענן הפרטי שלך ב-Firebase ומוצפנים בתעבורה. גישה רק עם החשבון שלך.</div>
+      <div class="auth-hint">🔒 גישה מוגבלת לחשבון יחיד. הרשמה חדשה אינה אפשרית.</div>
     </div>
   </div>
 

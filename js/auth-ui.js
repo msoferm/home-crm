@@ -1,23 +1,18 @@
 // ============================================================
-//  Auth UI — full-screen gate, user pill, sync status
+//  Auth UI — single-user gate (login only, no signup, no Google)
 //  Depends on window.Cloud (defined in cloud.js ES module).
 // ============================================================
 
 const AuthUI = (() => {
 
-  let _mode = 'login'; // 'login' | 'signup'
-
   const authErrorMessage = (err) => {
     const code = err?.code || '';
-    if (code.includes('email-already-in-use')) return 'הדוא"ל כבר רשום במערכת — נסה להיכנס במקום להירשם';
-    if (code.includes('weak-password')) return 'הסיסמה חלשה מדי — לפחות 6 תווים';
     if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) return 'דוא"ל או סיסמה שגויים';
     if (code.includes('invalid-email')) return 'דוא"ל לא תקין';
-    if (code.includes('popup-closed-by-user')) return 'חלון ההתחברות נסגר';
-    if (code.includes('popup-blocked')) return 'הדפדפן חסם את חלון ההתחברות — אפשר חלונות קופצים לאתר';
     if (code.includes('network')) return 'בעיית רשת — בדוק חיבור לאינטרנט';
-    if (code.includes('operation-not-allowed')) return 'יש להפעיל את ספק ההתחברות הזה ב-Firebase Console';
+    if (code.includes('operation-not-allowed')) return 'התחברות אינה זמינה כרגע';
     if (code.includes('too-many-requests')) return 'יותר מדי ניסיונות — נסה שוב בעוד דקות';
+    if (code.includes('user-disabled')) return 'החשבון מושבת';
     return err?.message || 'שגיאת התחברות';
   };
 
@@ -27,16 +22,6 @@ const AuthUI = (() => {
     e.classList.remove('hidden');
   };
   const clearError = () => document.getElementById('gate-error').classList.add('hidden');
-
-  const setMode = (m) => {
-    _mode = m;
-    document.getElementById('gate-tab-login').classList.toggle('active', m === 'login');
-    document.getElementById('gate-tab-signup').classList.toggle('active', m === 'signup');
-    document.getElementById('gate-submit-btn').textContent = m === 'login' ? 'כניסה' : 'הרשמה ושמירה בענן';
-    const passInp = document.querySelector('#gate-form input[name="password"]');
-    if (passInp) passInp.setAttribute('autocomplete', m === 'login' ? 'current-password' : 'new-password');
-    clearError();
-  };
 
   const showGate = () => {
     document.getElementById('boot-screen').classList.add('hidden');
@@ -55,20 +40,6 @@ const AuthUI = (() => {
   };
 
   const wireGate = () => {
-    document.getElementById('gate-tab-login').addEventListener('click', () => setMode('login'));
-    document.getElementById('gate-tab-signup').addEventListener('click', () => setMode('signup'));
-
-    document.getElementById('gate-google-btn').addEventListener('click', async () => {
-      clearError();
-      try {
-        await Cloud.signInGoogle();
-        // auth state listener will call showApp()
-      } catch (err) {
-        console.error(err);
-        showError(authErrorMessage(err));
-      }
-    });
-
     document.getElementById('gate-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       clearError();
@@ -79,8 +50,7 @@ const AuthUI = (() => {
       const origText = submitBtn.textContent;
       submitBtn.textContent = 'מתחבר...';
       try {
-        if (_mode === 'login') await Cloud.signInEmail(data.email, data.password);
-        else await Cloud.signUpEmail(data.email, data.password);
+        await Cloud.signInEmail(data.email, data.password);
         // auth state listener will call showApp()
       } catch (err) {
         console.error(err);
@@ -129,13 +99,11 @@ const AuthUI = (() => {
       if (!ok) return;
       try {
         await Cloud.logout();
-        // logout handler clears IDB and reloads
       } catch (err) {
         UI.toast('שגיאה בהתנתקות: ' + err.message, 'error');
       }
     });
 
-    // Subscribe to cloud events. Wait for cloud-ready if needed.
     const subscribe = () => {
       Cloud.subscribe((event, payload) => {
         if (event === 'authReady') {
@@ -160,11 +128,8 @@ const AuthUI = (() => {
           if (UI.currentPage() === 'transactions' && window.Transactions) Transactions.render();
         }
       });
-
-      // Read initial state (in case cloud already triggered authReady before we subscribed)
       const u = Cloud.currentUser();
       if (u !== undefined) {
-        // authReady was already fired
         if (u) { updateUserPill(u); showApp(); }
         else showGate();
       }
@@ -173,8 +138,6 @@ const AuthUI = (() => {
     if (window.Cloud) subscribe();
     else document.addEventListener('cloud-ready', subscribe, { once: true });
 
-    // Fallback: if cloud doesn't load within 8 seconds (CDN blocked, no internet),
-    // show the gate with an explanatory error
     setTimeout(() => {
       if (!window.Cloud) {
         showGate();

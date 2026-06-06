@@ -1,9 +1,21 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Per-user data: only the owner can read/write their own subtree
+    // Single-user system: only the owner's UID is allowed.
+    // Even if someone manages to create another Firebase account, they cannot
+    // read or write any data here — this UID is the only allow-listed one.
+    function isOwner() {
+      return request.auth != null
+          && request.auth.uid == 'tluTRZkohpXVOnc6po6xqhziK4D3';
+    }
+
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isOwner() && userId == request.auth.uid;
+    }
+
+    // Default deny everything else.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
