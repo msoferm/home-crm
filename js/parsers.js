@@ -287,7 +287,7 @@ const Parsers = (() => {
   const readFile = async (file) => {
     const name = file.name.toLowerCase();
     if (name.endsWith('.pdf')) {
-      if (!window.PdfParser) throw new Error('מודול PDF לא נטען. רענן את הדף.');
+      if (typeof PdfParser === 'undefined') throw new Error('מודול PDF לא נטען. רענן את הדף.');
       return PdfParser.parsePdfFile(file);
     }
     if (name.endsWith('.csv')) {

@@ -318,3 +318,7 @@ const PdfParser = (() => {
 
   return { parsePdfFile, promptPassword };
 })();
+
+// Belt-and-suspenders: expose on window so cross-script checks work
+// regardless of whether top-level const bindings are visible via window.
+window.PdfParser = PdfParser;
