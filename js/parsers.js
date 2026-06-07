@@ -114,36 +114,98 @@ const Parsers = (() => {
     return best.idx >= 0 ? best : null;
   };
 
-  // FALLBACK: if `description` wasn't detected, look at the un-mapped columns.
-  // For each unmapped column index, sample data rows and decide which one looks
-  // most like a description (mostly text, longer cells). Returns the col index.
+  // Helper: classify cell as text / number / date
+  const cellKind = (s) => {
+    if (s == null) return 'empty';
+    const str = String(s).trim();
+    if (!str) return 'empty';
+    const isPureNumeric = /^[\s\-+0-9.,()₪]+$/.test(str);
+    if (isPureNumeric && U.parseNum(str) != null) return 'number';
+    if (str.length <= 12 && U.parseDateFlex(str)) return 'date';
+    return 'text';
+  };
+
+  // FALLBACK 1: if `description` wasn't detected, look at the un-mapped columns.
+  // For each unmapped column index, sample data rows and pick the most text-like one.
   const guessDescriptionColumn = (rows, headerIdx, map) => {
     const usedCols = new Set(Object.values(map));
-    const headerRow = rows[headerIdx] || [];
-    const sample = rows.slice(headerIdx + 1, headerIdx + 1 + 25);
+    // Scan the MAXIMUM column index found in either header or any data row,
+    // because converted files often have data rows wider than the header row.
+    const sample = rows.slice(headerIdx + 1, headerIdx + 1 + 40);
+    let maxCols = (rows[headerIdx] || []).length;
+    for (const r of sample) maxCols = Math.max(maxCols, (r || []).length);
+
     let best = null;
-    for (let col = 0; col < headerRow.length; col++) {
+    for (let col = 0; col < maxCols; col++) {
       if (usedCols.has(col)) continue;
       let textScore = 0, totalCells = 0, totalLen = 0;
       for (const r of sample) {
         const v = r ? r[col] : null;
-        if (v == null || String(v).trim() === '') continue;
+        const kind = cellKind(v);
+        if (kind === 'empty') continue;
         totalCells++;
         const s = String(v).trim();
         totalLen += s.length;
-        // text = not a pure number and not a pure date
-        const isNum = U.parseNum(s) != null && /^[\s\-+0-9.,()₪]+$/.test(s);
-        const isDate = !!U.parseDateFlex(s) && s.length <= 12;
-        if (!isNum && !isDate) textScore++;
+        if (kind === 'text') textScore++;
       }
-      if (totalCells < 3) continue;
+      if (totalCells < 2) continue;
       const textRatio = textScore / totalCells;
       const avgLen = totalLen / totalCells;
-      if (textRatio < 0.6) continue;
+      if (textRatio < 0.5) continue;
       const score = textRatio * Math.min(avgLen, 60);
       if (!best || score > best.score) best = { col, score };
     }
     return best ? best.col : -1;
+  };
+
+  // FALLBACK 2: validate that the columns we mapped as money (debit/credit/amount)
+  // ACTUALLY contain money-like values. Some converted files have mis-labeled
+  // headers — e.g. the column called "יתרה בש"ח" actually holds transaction
+  // amounts, while the column called "זכות/חובה" holds a reference number.
+  // If that's the case, swap balance → amount.
+  const validateMoneyColumns = (rows, headerIdx, map) => {
+    const sample = rows.slice(headerIdx + 1, headerIdx + 1 + 30);
+    // Money-like score: fraction of values that have a decimal point or a
+    // sign indicator (- or parentheses or trailing minus).
+    const moneyScore = (col) => {
+      if (col == null) return 0;
+      let goodMoney = 0, total = 0;
+      for (const r of sample) {
+        const v = r ? r[col] : null;
+        if (v == null || String(v).trim() === '') continue;
+        const s = String(v).trim();
+        const n = U.parseNum(s);
+        if (n == null) continue;
+        total++;
+        const hasDec = /\.\d{1,2}\b/.test(s) || /,\d{1,2}\b/.test(s);
+        const hasSign = s.includes('-') || s.includes('−') || /\(.+\)/.test(s);
+        if (hasDec || hasSign) goodMoney++;
+      }
+      if (!total) return 0;
+      return goodMoney / total;
+    };
+
+    const debitS  = moneyScore(map.debit);
+    const creditS = moneyScore(map.credit);
+    const amountS = moneyScore(map.amount);
+    const balanceS = moneyScore(map.balance);
+
+    const supposedMoneyOK = Math.max(debitS, creditS, amountS) >= 0.5;
+
+    // CASE 1: balance looks like money but the supposed amount columns don't.
+    // → balance is actually the amount. The supposed debit/credit was probably
+    // a reference number, so drop it.
+    if (!supposedMoneyOK && balanceS >= 0.5 && map.balance != null) {
+      const newMap = { ...map };
+      newMap.amount = map.balance;
+      delete newMap.balance;
+      if (debitS < 0.3) delete newMap.debit;
+      if (creditS < 0.3) delete newMap.credit;
+      if (amountS < 0.3 && newMap.amount === map.balance) {} // already moved
+      console.log('[parser] money-validate: balance→amount (debit/credit weren\'t money)');
+      return newMap;
+    }
+    return map;
   };
 
   // Pick the sheet most likely to contain the transactions table.
@@ -224,7 +286,10 @@ const Parsers = (() => {
     const header = best.header;
     let { idx: headerIdx, map } = header;
 
-    // FALLBACK: if description column not found, infer it
+    // FALLBACK 1: validate that money columns actually contain money;
+    // swap balance→amount if labels are misaligned (common in PDF→XLSX converters)
+    map = validateMoneyColumns(usedSheet.rows, headerIdx, map);
+    // FALLBACK 2: infer description column from un-mapped text columns
     if (!('description' in map)) {
       const guess = guessDescriptionColumn(usedSheet.rows, headerIdx, map);
       if (guess >= 0) {
@@ -307,7 +372,9 @@ const Parsers = (() => {
     const header = best.header;
     let { idx: headerIdx, map } = header;
 
-    // FALLBACK: if description column not detected, infer it from unmapped columns
+    // FALLBACK 1: validate money columns; swap balance→amount if misaligned
+    map = validateMoneyColumns(usedSheet.rows, headerIdx, map);
+    // FALLBACK 2: infer description column from un-mapped text columns
     if (!('description' in map)) {
       const guess = guessDescriptionColumn(usedSheet.rows, headerIdx, map);
       if (guess >= 0) {
