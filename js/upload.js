@@ -105,8 +105,11 @@ const Upload = (() => {
       _pendingFileName = file.name;
       renderPreview();
     } catch (err) {
-      console.error(err);
-      UI.toast('שגיאה בקריאת הקובץ: ' + err.message, 'error');
+      console.error('[upload] file read failed:', err);
+      showParseErrorModal({
+        error: 'שגיאה בעיבוד הקובץ: ' + (err?.message || err),
+        diagnostic: (err?.stack || '').split('\n').slice(0, 6).join('\n'),
+      }, file, kind);
     }
   };
 

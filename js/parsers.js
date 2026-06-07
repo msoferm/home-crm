@@ -218,6 +218,36 @@ const Parsers = (() => {
     return map;
   };
 
+  // FALLBACK 3: validate that the mapped description column actually contains
+  // text (not numeric codes). Some converted files swap columns so the column
+  // header-labeled "תיאור"/"סוג תנועה" actually holds a single-digit code,
+  // and the real description is in a column with an unrelated header.
+  const validateDescriptionColumn = (rows, headerIdx, map) => {
+    if (!('description' in map)) return map;
+    const sample = rows.slice(headerIdx + 1, headerIdx + 1 + 30);
+    let textCount = 0, total = 0, totalLen = 0;
+    for (const r of sample) {
+      const v = r ? r[map.description] : null;
+      if (v == null || String(v).trim() === '') continue;
+      total++;
+      const s = String(v).trim();
+      totalLen += s.length;
+      const kind = cellKind(s);
+      if (kind === 'text' || (kind !== 'date' && s.length >= 4)) textCount++;
+    }
+    if (total < 3) return map; // can't decide
+    const textRatio = textCount / total;
+    const avgLen = totalLen / total;
+    // If column is mostly numeric codes (short integers), reject it as description
+    if (textRatio < 0.4 || avgLen < 3) {
+      const newMap = { ...map };
+      delete newMap.description;
+      console.log('[parser] description column rejected (mostly numeric/short), will refallback');
+      return newMap;
+    }
+    return map;
+  };
+
   // Pick the sheet most likely to contain the transactions table.
   const pickBestSheet = (sheets) => {
     let best = null;
@@ -384,12 +414,14 @@ const Parsers = (() => {
 
     // FALLBACK 1: validate money columns; swap balance→amount if misaligned
     map = validateMoneyColumns(usedSheet.rows, headerIdx, map);
-    // FALLBACK 2: infer description column from un-mapped text columns
+    // FALLBACK 2: validate description column has actual text (not codes)
+    map = validateDescriptionColumn(usedSheet.rows, headerIdx, map);
+    // FALLBACK 3: infer description column from un-mapped text columns
     if (!('description' in map)) {
       const guess = guessDescriptionColumn(usedSheet.rows, headerIdx, map);
       if (guess >= 0) {
         map = { ...map, description: guess };
-        console.log('[parseBank] description fallback guessed col', guess);
+        console.log('[parse] description fallback guessed col', guess);
       }
     }
 
