@@ -10,20 +10,29 @@ const Parsers = (() => {
   // so that a column "תאריך חיוב" maps to chargeDate, not to date.
   const HEADER_MAP = {
     chargeDate: [
+      // Mizrahi-Tefahot etc. use this as the secondary "value date" column
+      'תאריך ערך','ת.ערך','ת. ערך','value date',
+      // Credit card "charge date"
       'תאריך חיוב','מועד חיוב','חיוב בתאריך','עסקה תחויב ב','תאריך חיוב הכרטיס','תאריך לחיוב'
     ],
     date: [
-      'תאריך עסקה','תאריך רכישה','תאריך','תאריך ערך','תאריך פעולה','תאריך הפעולה',
-      'מועד','מועד עסקה','עסקה בתאריך','date','transaction date','posting date','value date'
+      'תאריך עסקה','תאריך רכישה','תאריך','תאריך פעולה','תאריך הפעולה',
+      'מועד','מועד עסקה','עסקה בתאריך','date','transaction date','posting date'
     ],
     description: [
+      // Bank-specific (Mizrahi-Tefahot stores the description in this column)
+      'סוג תנועה','סוג פעולה',
+      // Generic Hebrew
       'שם בית עסק','שם בית העסק','בית עסק','בית העסק','שם עסק',
-      'תיאור הפעולה','תיאור פעולה','תיאור התנועה','תיאור התנועה','תיאור','תאור',
+      'תיאור הפעולה','תיאור פעולה','תיאור התנועה','תיאור','תאור',
       'פרטים','פרטי הפעולה','פרטי פעולה','פרטי תנועה','פירוט','פירוט פעולה',
       'שם הספק','שם הפעולה','מהות הפעולה','מהות',
       'description','details','narration','memo','merchant','transaction','desc'
     ],
     amount: [
+      // Combined signed-amount columns (Mizrahi-Tefahot, Hapoalim PDFs)
+      'זכות/חובה','חובה/זכות','זכות / חובה','חובה / זכות',
+      // Generic single "amount" columns
       'סכום עסקה','סכום בש"ח','סכום ש"ח','סכום','סכום החיוב','סכום בשקלים',
       'סכום החיוב בש"ח','סכום פעולה','סכום הפעולה','סכום בש״ח','סכום תנועה',
       'amount','חיוב','חיוב בש"ח','total'
@@ -51,8 +60,9 @@ const Parsers = (() => {
       'מספר תשלומים','סך תשלומים','כמות תשלומים','total installments'
     ],
     notes: [
-      'הערות','הערה','notes','note','אסמכתא','מספר אסמכתא','אסמכתא/מס\' שיק',
-      'סוג תנועה','סוג','אסמכתא 1','אסמכתא 2','reference'
+      'הערות','הערה','notes','note',
+      'אסמכתא','אסמכתה','מספר אסמכתא','אסמכתא/מס\' שיק','אסמכתא 1','אסמכתא 2',
+      'reference','ref'
     ],
   };
 
@@ -393,13 +403,15 @@ const Parsers = (() => {
     for (const row of dataRows) {
       if (!row || row.every(c => c == null || String(c).trim() === '')) { reject.empty++; continue; }
       const desc = String(get(row, 'description') || '').trim();
-      const date = U.parseDateFlex(get(row, 'date'));
+      // Fall back to chargeDate if the primary date cell is empty (common in
+      // bank exports where only one of "תאריך"/"תאריך ערך" is populated per row).
+      const date = U.parseDateFlex(get(row, 'date')) || U.parseDateFlex(get(row, 'chargeDate'));
       let amt = null;
       const debit = U.parseNum(get(row, 'debit'));
       const credit = U.parseNum(get(row, 'credit'));
       if (debit != null && debit !== 0) amt = -Math.abs(debit);
       else if (credit != null && credit !== 0) amt = Math.abs(credit);
-      else amt = U.parseNum(get(row, 'amount'));
+      else amt = U.parseNum(get(row, 'amount')); // signed amount (used by Mizrahi-Tefahot)
 
       if (!date) { reject.noDate++; continue; }
       if (amt == null || amt === 0) { reject.noAmt++; continue; }
@@ -408,12 +420,13 @@ const Parsers = (() => {
 
       const bal = U.parseNum(get(row, 'balance'));
       if (bal != null) lastBalance = { value: bal, date };
+      const noteText = String(get(row, 'notes') || '').trim();
 
       results.push({
         date, description: desc, amount: amt,
         type: amt < 0 ? 'expense' : 'income',
         accountId, source: 'bank-statement', sourceFile: file.name,
-        notes: '', balanceAfter: bal,
+        notes: noteText, balanceAfter: bal,
       });
     }
 
